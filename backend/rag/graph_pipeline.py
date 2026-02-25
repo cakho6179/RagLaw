@@ -82,6 +82,7 @@ class GraphRAGPipeline:
             collection_name=config.COLLECTION_NAME,
             embedding=adapter,
             retrieval_mode=RetrievalMode.DENSE,
+            content_payload_key="text",
         )
         self.llm = ChatGoogleGenerativeAI(
             model=config.GEMINI_MODEL,

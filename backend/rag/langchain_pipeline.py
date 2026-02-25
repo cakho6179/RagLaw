@@ -99,6 +99,7 @@ class AgenticRAGPipeline:
                 embedding=dense_adapter,
                 sparse_embedding=sparse_adapter,
                 retrieval_mode=mode,
+                content_payload_key="text",
             )
         else:
             self.vector_store = QdrantVectorStore(
@@ -106,6 +107,7 @@ class AgenticRAGPipeline:
                 collection_name=self.collection_name,
                 embedding=dense_adapter,
                 retrieval_mode=mode,
+                content_payload_key="text",
             )
 
         self.model = ChatGoogleGenerativeAI(
