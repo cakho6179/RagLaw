@@ -1,0 +1,11 @@
+/.env
+/.env.example
+/.pytest_cache
+/.ruff_cache
+/data
+/raglaw.db
+/restore_stubs.py
+/run_backend.bat
+/run_frontend.bat
+/temp
+/tests

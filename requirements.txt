@@ -1,0 +1,57 @@
+# RagLaw - Vietnamese Legal RAG System
+# =====================================
+# High-performance retrieval-augmented generation for Vietnamese legal documents
+# Version 3.0.0
+
+# ============ Core Framework ============
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# ============ AI/ML ============
+# Embedding & Retrieval
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4           # Use faiss-gpu for CUDA support
+
+# BM25 - Fast implementation (preferred)
+bm25s>=0.2.0               # Fast BM25 implementation
+rank-bm25>=0.2.2           # Fallback option
+
+# Language Models
+transformers>=4.36.0
+accelerate>=0.25.0
+torch>=2.0.0
+
+# LLM API
+google-generativeai>=0.3.0
+google-genai>=0.1.0         # Google GenAI SDK (for Gemma/Gemini 2.5+)
+google-adk>=0.0.1           # Agent Development Kit (P2)
+anthropic>=0.39.0           # Anthropic SDK for compatible API
+openai>=1.0.0               # OpenAI/ChatGPT SDK (also for local LLM)
+
+# ============ Vietnamese NLP ============
+# Word segmentation (choose one)
+pyvi>=0.1.1                # Vietnamese word segmentation
+# underthesea>=6.8.0       # Alternative (heavier)
+
+# ============ Data Processing ============
+numpy>=1.24.0
+datasets>=2.18.0
+
+# ============ Evaluation ============
+scikit-learn>=1.3.0        # For metrics calculation
+tqdm>=4.66.0               # Progress bars
+
+# ============ Authentication & Database ============
+sqlalchemy>=2.0.0
+bcrypt>=4.0.0
+python-jose[cryptography]>=3.3.0
+pydantic-settings>=2.0.0
+
+# ============ Vector Store & Agentic Pipeline ============
+qdrant-client>=1.7.0        # Qdrant vector database client
+langchain-qdrant>=0.1.1     # LangChain integration for Qdrant
+langchain-text-splitters>=0.2.0 # For hierarchical chunker
+# langgraph>=0.0.20         # Uncomment for LangGraph agentic RAG pipeline (P2)
