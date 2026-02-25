@@ -19,7 +19,7 @@ function Sidebar({ activeView, onViewChange, theme, onThemeToggle, isConnected, 
 
     const loadSessions = async () => {
         try {
-            const res = await fetch('/api/chat/sessions')
+            const res = await fetch('/api/sessions')
             if (res.ok) {
                 const data = await res.json()
                 setSessions(data.sessions || [])
@@ -42,7 +42,7 @@ function Sidebar({ activeView, onViewChange, theme, onThemeToggle, isConnected, 
     const deleteSession = async (e, sessionId) => {
         e.stopPropagation()
         try {
-            await fetch(`/api/chat/sessions/${sessionId}`, { method: 'DELETE' })
+            await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
             setSessions(prev => prev.filter(s => s.session_id !== sessionId))
             if (currentSessionId === sessionId) {
                 onSessionSelect(null)

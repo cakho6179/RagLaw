@@ -47,6 +47,7 @@ class AgenticState(TypedDict):
     needs_retrieval: bool
     answer: str
     sources: List[Dict[str, Any]]
+    model_name: str
 
 
 class AgenticRAGPipeline:
@@ -110,11 +111,31 @@ class AgenticRAGPipeline:
                 content_payload_key="text",
             )
 
-        self.model = ChatGoogleGenerativeAI(
-            model=config.GEMINI_MODEL,
-            google_api_key=config.GOOGLE_API_KEY,
-            temperature=0.0,
-        )
+        self.models = {
+            "flash": ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash",
+                google_api_key=config.GOOGLE_API_KEY,
+                temperature=0.0,
+            ),
+            "pro": ChatGoogleGenerativeAI(
+                model="gemini-2.5-pro",
+                google_api_key=config.GOOGLE_API_KEY,
+                temperature=0.0,
+            ),
+            "gemma": ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",
+                google_api_key=config.GOOGLE_API_KEY,
+                temperature=0.0,
+            ),
+        }
+        try:
+            from langchain_community.chat_models import ChatOllama
+
+            self.models["local"] = ChatOllama(model="llama3", temperature=0.0)
+        except ImportError:
+            self.models["local"] = self.models["gemma"]
+
+        self.model = self.models["gemma"]  # Default fallback
 
         self.graph = self._build_graph()
         self._initialized = True
@@ -137,7 +158,8 @@ class AgenticRAGPipeline:
                 ("human", "{query}"),
             ]
         )
-        chain = router_prompt | self.model | StrOutputParser()
+        llm = self.models.get(state.get("model_name", "gemma"), self.model)
+        chain = router_prompt | llm | StrOutputParser()
         result = chain.invoke({"query": state["query"]}).strip().lower()
         state["needs_retrieval"] = "yes" in result
         return state
@@ -158,6 +180,7 @@ class AgenticRAGPipeline:
         )
         prompt = ChatPromptTemplate.from_messages(
             [
+                MessagesPlaceholder("history"),
                 (
                     "human",
                     (
@@ -165,14 +188,14 @@ class AgenticRAGPipeline:
                         "Hãy trả lời câu hỏi DỰA TRÊN các tài liệu pháp luật được cung cấp.\n"
                         "Nếu thông tin không đủ, hãy nói rõ thay vì tự bịa đặt.\n"
                         "Trả lời bằng tiếng Việt, rõ ràng và chuyên nghiệp.\n\n"
-                        "TÀI LIỆU:\n{context}"
+                        "TÀI LIỆU:\n{context}\n\n"
+                        "CÂU HỎI: {query}"
                     ),
                 ),
-                MessagesPlaceholder("history"),
-                ("human", "{query}"),
             ]
         )
-        chain = prompt | self.model | StrOutputParser()
+        llm = self.models.get(state.get("model_name", "gemma"), self.model)
+        chain = prompt | llm | StrOutputParser()
         answer = chain.invoke(
             {
                 "context": context,
@@ -182,7 +205,7 @@ class AgenticRAGPipeline:
         )
         state["answer"] = answer
         state["sources"] = [
-            {"content": doc.page_content[:300], "metadata": doc.metadata}
+            {"content": doc.page_content, "metadata": doc.metadata}
             for doc in state["documents"][: self.top_k]
         ]
         return state
@@ -191,15 +214,18 @@ class AgenticRAGPipeline:
         """Generate answer directly (no retrieval needed)."""
         prompt = ChatPromptTemplate.from_messages(
             [
+                MessagesPlaceholder("history"),
                 (
                     "human",
-                    "Bạn là trợ lý pháp lý thân thiện của hệ thống RagLaw. Hãy trả lời lịch sự bằng tiếng Việt.",
+                    (
+                        "Bạn là trợ lý pháp lý thân thiện của hệ thống RagLaw. Hãy trả lời lịch sự bằng tiếng Việt.\n\n"
+                        "CÂU HỎI: {query}"
+                    ),
                 ),
-                MessagesPlaceholder("history"),
-                ("human", "{query}"),
             ]
         )
-        chain = prompt | self.model | StrOutputParser()
+        llm = self.models.get(state.get("model_name", "gemma"), self.model)
+        chain = prompt | llm | StrOutputParser()
         state["answer"] = chain.invoke(
             {"history": state.get("history", []), "query": state["query"]}
         )
@@ -232,7 +258,10 @@ class AgenticRAGPipeline:
     # ── Public interface ──────────────────────────────────────────────────
 
     def respond(
-        self, query: str, history: List[BaseMessage] | None = None
+        self,
+        query: str,
+        history: List[BaseMessage] | None = None,
+        model_name: str = "gemma",
     ) -> Dict[str, Any]:
         if not self._initialized:
             self.startup()
@@ -246,12 +275,16 @@ class AgenticRAGPipeline:
             "needs_retrieval": True,
             "answer": "",
             "sources": [],
+            "model_name": model_name,
         }
         final_state = self.graph.invoke(initial)
         return {"answer": final_state["answer"], "sources": final_state["sources"]}
 
     async def query_stream(
-        self, query: str, history: List[BaseMessage] | None = None
+        self,
+        query: str,
+        history: List[BaseMessage] | None = None,
+        model_name: str = "gemma",
     ) -> AsyncGenerator[Dict, None]:
         """Run the pipeline and yield SSE-compatible dicts."""
         import asyncio
@@ -262,7 +295,9 @@ class AgenticRAGPipeline:
         yield {"type": "status", "data": "🔍 Đang phân tích câu hỏi..."}
 
         # Run the blocking graph in a thread
-        result = await loop.run_in_executor(None, partial(self.respond, query, history))
+        result = await loop.run_in_executor(
+            None, partial(self.respond, query, history, model_name=model_name)
+        )
 
         # Yield sources first
         yield {"type": "sources", "data": result["sources"]}

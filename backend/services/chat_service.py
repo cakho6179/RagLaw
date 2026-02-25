@@ -37,9 +37,13 @@ class ChatService:
                 history.add_message(AIMessage(content=msg.content))
         self.session_store[session_id] = history
 
-    def respond(self, query: str, session_id: str = "default") -> Dict[str, Any]:
+    def respond(
+        self, query: str, session_id: str = "default", model: str = "gemma"
+    ) -> Dict[str, Any]:
         history = self._get_history(session_id)
-        result = self.pipeline.respond(query, history=history.messages)
+        result = self.pipeline.respond(
+            query, history=history.messages, model_name=model
+        )
         history.add_user_message(query)
         history.add_ai_message(result["answer"])
         return result

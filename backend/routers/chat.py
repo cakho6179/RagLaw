@@ -22,6 +22,8 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
+    model: Optional[str] = "gemma"
+    mode: Optional[str] = "flash"
 
 
 class ChatResponse(BaseModel):
@@ -40,7 +42,10 @@ def _ensure_session(db: DbSession, session_id: Optional[str]) -> tuple[str, bool
         return sess.id, True
     sess = session_service.get_session(db, session_id)
     if sess is None:
-        sess = session_service.create_session(db, title="Restored Chat")
+        sess = session_service.create_session(
+            db, title="Mới Khôi Phục", session_id=session_id
+        )
+        return sess.id, True
     return sess.id, False
 
 
@@ -60,7 +65,8 @@ async def chat(
     existing = session_service.get_messages(db, session_id)
     service.load_history_from_messages(session_id, existing)
 
-    result = service.respond(payload.message, session_id=session_id)
+    model_key = payload.mode if payload.model == "gemini" else payload.model
+    result = service.respond(payload.message, session_id=session_id, model=model_key)
 
     # Persist messages
     session_service.add_message(db, session_id, "user", payload.message)
@@ -95,9 +101,11 @@ async def chat_stream(
     async def event_generator():
         full_answer = ""
         all_sources = []
+        model_key = payload.mode if payload.model == "gemini" else payload.model
         async for event in pipeline.query_stream(
             payload.message,
             history=service._get_history(session_id).messages,
+            model_name=model_key,
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             if event.get("type") == "chunk":
@@ -138,9 +146,10 @@ async def adk_chat_stream(
         adk = get_adk_pipeline()
     except Exception as e:
         logger.error(f"ADK init error: {e}")
+        error_msg = str(e)
 
         async def error_gen():
-            yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'data': error_msg})}\n\n"
 
         return StreamingResponse(error_gen(), media_type="text/event-stream")
 

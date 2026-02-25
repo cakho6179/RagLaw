@@ -19,8 +19,10 @@ class SessionService:
 
     # ── Sessions ──────────────────────────────────────────────────────────
 
-    def create_session(self, db: DbSession, title: str = "New Chat") -> ChatSession:
-        session = ChatSession(id=str(uuid.uuid4()), title=title)
+    def create_session(
+        self, db: DbSession, title: str = "New Chat", session_id: Optional[str] = None
+    ) -> ChatSession:
+        session = ChatSession(id=session_id or str(uuid.uuid4()), title=title)
         db.add(session)
         db.commit()
         db.refresh(session)

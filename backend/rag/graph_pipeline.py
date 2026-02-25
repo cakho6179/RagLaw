@@ -64,7 +64,7 @@ class GraphRAGPipeline:
         self.kg_hops = kg_hops
         self._initialized = False
         self.vector_store: Optional[QdrantVectorStore] = None
-        self.llm: Optional[ChatGoogleGenerativeAI] = None
+        self.models: dict = {}
         self.kg: Optional[KnowledgeGraph] = None
         self.lookup: Optional[LawDocumentService] = None
 
@@ -84,11 +84,29 @@ class GraphRAGPipeline:
             retrieval_mode=RetrievalMode.DENSE,
             content_payload_key="text",
         )
-        self.llm = ChatGoogleGenerativeAI(
-            model=config.GEMINI_MODEL,
-            google_api_key=config.GOOGLE_API_KEY,
-            temperature=0.0,
-        )
+        self.models = {
+            "flash": ChatGoogleGenerativeAI(
+                model="gemini-2.0-flash",
+                google_api_key=config.GOOGLE_API_KEY,
+                temperature=0.0,
+            ),
+            "pro": ChatGoogleGenerativeAI(
+                model="gemini-2.5-pro",
+                google_api_key=config.GOOGLE_API_KEY,
+                temperature=0.0,
+            ),
+            "gemma": ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash",  # Sub for gemma
+                google_api_key=config.GOOGLE_API_KEY,
+                temperature=0.0,
+            ),
+        }
+        try:
+            from langchain_community.chat_models import ChatOllama
+
+            self.models["local"] = ChatOllama(model="llama3", temperature=0.0)
+        except ImportError:
+            self.models["local"] = self.models["gemma"]
         self.kg = get_knowledge_graph()
         self.lookup = get_lookup_service()
         self._initialized = True
@@ -127,28 +145,36 @@ class GraphRAGPipeline:
         return fused[: self.top_k]
 
     def _generate(
-        self, query: str, docs: List[Document], history: List[BaseMessage]
+        self,
+        query: str,
+        docs: List[Document],
+        history: List[BaseMessage],
+        model_name: str = "gemma",
     ) -> str:
         context = "\n\n---\n\n".join(d.page_content for d in docs) if docs else ""
         system = (
             "Bạn là trợ lý pháp lý AI chuyên về pháp luật Việt Nam.\n"
             "Hãy trả lời câu hỏi DỰA TRÊN tài liệu pháp luật được cung cấp.\n"
-            f"{'TÀI LIỆU PHÁP LUẬT (từ cả tìm kiếm ngữ nghĩa và đồ thị tri thức):\n' + context if context else 'Không tìm thấy tài liệu liên quan. Hãy trả lời dựa trên kiến thức chung.'}"
+            f"{'TÀI LIỆU PHÁP LUẬT (từ cả tìm kiếm ngữ nghĩa và đồ thị tri thức):\n' + context if context else 'Không tìm thấy tài liệu liên quan. Hãy trả lời dựa trên kiến thức chung.'}\n\n"
+            "CÂU HỎI CỦA NGƯỜI DÙNG: {query}"
         )
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("human", system),
                 MessagesPlaceholder("history"),
-                ("human", "{query}"),
+                ("human", system),
             ]
         )
-        chain = prompt | self.llm | StrOutputParser()
+        llm = self.models.get(model_name, self.models["gemma"])
+        chain = prompt | llm | StrOutputParser()
         return chain.invoke({"history": history, "query": query})
 
     # ── Public API ─────────────────────────────────────────────────────────
 
     def respond(
-        self, query: str, history: Optional[List[BaseMessage]] = None
+        self,
+        query: str,
+        history: Optional[List[BaseMessage]] = None,
+        model_name: str = "gemma",
     ) -> Dict[str, Any]:
         if not self._initialized:
             self.startup()
@@ -156,10 +182,10 @@ class GraphRAGPipeline:
         vector_docs = self._retrieve_vector(query)
         graph_docs = self._retrieve_graph(query)
         fused_docs = self._fuse_and_rerank(vector_docs, graph_docs)
-        answer = self._generate(query, fused_docs, history)
+        answer = self._generate(query, fused_docs, history, model_name)
         sources = [
             {
-                "content": d.page_content[:300],
+                "content": d.page_content,
                 "metadata": d.metadata,
                 "source": "graph" if d in graph_docs else "vector",
             }
@@ -168,7 +194,10 @@ class GraphRAGPipeline:
         return {"answer": answer, "sources": sources, "kg_docs_found": len(graph_docs)}
 
     async def graph_stream(
-        self, query: str, history: Optional[List[BaseMessage]] = None
+        self,
+        query: str,
+        history: Optional[List[BaseMessage]] = None,
+        model_name: str = "gemma",
     ) -> AsyncGenerator[Dict, None]:
         """Stream GraphRAG response as SSE-compatible dicts."""
         if not self._initialized:
@@ -177,7 +206,9 @@ class GraphRAGPipeline:
 
         yield {"type": "status", "data": "🕸️ Đang tra cứu đồ thị tri thức..."}
 
-        result = await loop.run_in_executor(None, partial(self.respond, query, history))
+        result = await loop.run_in_executor(
+            None, partial(self.respond, query, history, model_name=model_name)
+        )
 
         kg_count = result.get("kg_docs_found", 0)
         if kg_count > 0:

@@ -190,7 +190,13 @@ class MultiToolAgent:
             "- search_law_text: tìm kiếm theo từ khóa\n"
             "Hãy sử dụng ít nhất 1 công cụ trước khi trả lời."
         )
-        messages = [{"role": "human", "content": system}] + state["messages"]
+        messages = list(state["messages"])
+        if messages and messages[0].type == "human":
+            content = messages[0].content
+            if "HƯỚNG DẪN HỆ THỐNG:" not in content:
+                messages[0] = HumanMessage(
+                    content=f"HƯỚNG DẪN HỆ THỐNG:\n{system}\n\nCÂU HỎI:\n{content}"
+                )
         response = self.llm_with_tools.invoke(messages)
         return {
             "messages": [response],
