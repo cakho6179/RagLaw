@@ -9,3 +9,4 @@
 /run_frontend.bat
 /temp
 /tests
+/frontend/node_modules
