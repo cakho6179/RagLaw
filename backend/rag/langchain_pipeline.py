@@ -151,52 +151,10 @@ class AgenticRAGPipeline:
         state["documents"] = docs
         return state
 
-    def _grade_documents(self, state: AgenticState) -> AgenticState:
-        """Grade each document for relevance to query."""
-        grader_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "human",
-                    (
-                        "Bạn là bộ chấm điểm tài liệu.\n"
-                        "Trả lời 'yes' nếu đoạn văn bản dưới đây có liên quan và hữu ích để trả lời câu hỏi.\n"
-                        "Trả lời 'no' nếu không liên quan."
-                    ),
-                ),
-                ("human", "Câu hỏi: {query}\n\nTài liệu:\n{document}"),
-            ]
-        )
-        chain = grader_prompt | self.model | StrOutputParser()
-        relevant = []
-        for doc in state["documents"]:
-            score = chain.invoke(
-                {"query": state["current_query"], "document": doc.page_content}
-            )
-            if "yes" in score.lower():
-                relevant.append(doc)
-        state["relevant_documents"] = relevant
-        return state
-
-    def _rewrite_query(self, state: AgenticState) -> AgenticState:
-        """Rewrite the query for better retrieval."""
-        rewrite_prompt = ChatPromptTemplate.from_messages(
-            [
-                (
-                    "human",
-                    "Bạn là chuyên gia viết lại câu truy vấn pháp luật cho tìm kiếm ngữ nghĩa. Viết lại câu hỏi súc tích hơn, đúng thuật ngữ pháp luật.",
-                ),
-                ("human", "Câu hỏi gốc: {query}\n\nCâu hỏi viết lại:"),
-            ]
-        )
-        chain = rewrite_prompt | self.model | StrOutputParser()
-        state["current_query"] = chain.invoke({"query": state["current_query"]}).strip()
-        state["rewrite_count"] += 1
-        return state
-
     def _generate_with_context(self, state: AgenticState) -> AgenticState:
         """Generate answer using retrieved context."""
         context = "\n\n---\n\n".join(
-            doc.page_content for doc in state["relevant_documents"]
+            doc.page_content for doc in state["documents"][: self.top_k]
         )
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -225,7 +183,7 @@ class AgenticRAGPipeline:
         state["answer"] = answer
         state["sources"] = [
             {"content": doc.page_content[:300], "metadata": doc.metadata}
-            for doc in state["relevant_documents"][: self.top_k]
+            for doc in state["documents"][: self.top_k]
         ]
         return state
 
@@ -253,15 +211,6 @@ class AgenticRAGPipeline:
     def _should_retrieve(self, state: AgenticState) -> str:
         return "retrieve" if state["needs_retrieval"] else "generate_direct"
 
-    def _should_rewrite_or_generate(self, state: AgenticState) -> str:
-        if state["relevant_documents"]:
-            return "generate"
-        if state["rewrite_count"] < MAX_REWRITE:
-            return "rewrite"
-        # Give up — generate with whatever we have
-        state["relevant_documents"] = state["documents"][: self.top_k]
-        return "generate"
-
     # ── Build graph ───────────────────────────────────────────────────────
 
     def _build_graph(self):
@@ -269,23 +218,12 @@ class AgenticRAGPipeline:
 
         g.add_node("route", self._route_query)
         g.add_node("retrieve", self._retrieve)
-        g.add_node("grade", self._grade_documents)
-        g.add_node("rewrite", self._rewrite_query)
         g.add_node("generate", self._generate_with_context)
         g.add_node("generate_direct", self._generate_direct)
 
         g.set_entry_point("route")
         g.add_conditional_edges("route", self._should_retrieve)
-        g.add_edge("retrieve", "grade")
-        g.add_conditional_edges(
-            "grade",
-            self._should_rewrite_or_generate,
-            {
-                "rewrite": "rewrite",
-                "generate": "generate",
-            },
-        )
-        g.add_edge("rewrite", "retrieve")
+        g.add_edge("retrieve", "generate")
         g.add_edge("generate", END)
         g.add_edge("generate_direct", END)
 
