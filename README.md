@@ -23,44 +23,34 @@
 
 <br>
 
-<p align="center">
-  <img src="docs/demo_screenshot.png" alt="RagLaw Demo" width="800">
-</p>
+---
 
-<p align="center"><i>Chat interface with real-time agentic thoughts, inline citations, and interactive source cards</i></p>
+## Table of Contents
+
+- [Key Highlights](#key-highlights)
+- [System Architecture](#system-architecture)
+- [Agentic Pipeline Deep Dive](#agentic-pipeline-deep-dive)
+- [Tech Stack](#tech-stack)
+- [Project Structure](#project-structure)
+- [Getting Started](#getting-started)
+- [API Reference](#api-reference)
+- [License](#license)
 
 ---
 
-## 📋 Table of Contents
-
-- [Key Highlights](#-key-highlights)
-- [System Architecture](#-system-architecture)
-- [Agentic Pipeline Deep Dive](#-agentic-pipeline-deep-dive)
-- [Knowledge Graph](#-knowledge-graph)
-- [Tech Stack](#-tech-stack)
-- [Project Structure](#-project-structure)
-- [Getting Started](#-getting-started)
-- [API Reference](#-api-reference)
-- [Design Decisions](#-design-decisions)
-- [Performance](#-performance)
-- [Roadmap](#-roadmap)
-- [License](#-license)
-
----
-
-## 🎯 Key Highlights
+## Key Highlights
 
 <table>
 <tr>
 <td width="50%">
 
-### 🧠 Agentic RAG Pipeline
+### Agentic RAG Pipeline
 Not a simple retrieve-then-generate. Uses a **LangGraph state machine** with intelligent routing, contextual query reformulation, and multi-strategy retrieval.
 
 </td>
 <td width="50%">
 
-### 🔀 3-Way Smart Router
+### 3-Way Smart Router
 LLM classifies queries into `vector` (content search), `graph` (relationship traversal), or `chat` (direct response) for optimal retrieval strategy.
 
 </td>
@@ -68,13 +58,13 @@ LLM classifies queries into `vector` (content search), `graph` (relationship tra
 <tr>
 <td>
 
-### 🔄 History-Aware Contextualizer
+### History-Aware Contextualizer
 Rewrites follow-up questions into standalone queries using conversation history, solving the classic **multi-turn RAG problem**.
 
 </td>
 <td>
 
-### 🔗 Knowledge Graph + Vector Hybrid
+### Knowledge Graph + Vector Hybrid
 Combines **NetworkX** legal entity graph with **Qdrant** dense vector search for comprehensive document discovery.
 
 </td>
@@ -82,13 +72,13 @@ Combines **NetworkX** legal entity graph with **Qdrant** dense vector search for
 <tr>
 <td>
 
-### 📝 Inline Citations
+### Inline Citations
 LLM responses include verifiable `[1]`, `[2]` references mapped to expandable source document cards.
 
 </td>
 <td>
 
-### 🤖 Multi-Model Hot Swap
+### Multi-Model Hot Swap
 **Gemini Flash**, **Gemini Pro**, **Gemma 3 27B**, and **local Ollama** — switch models per-message without restart.
 
 </td>
@@ -97,70 +87,53 @@ LLM responses include verifiable `[1]`, `[2]` references mapped to expandable so
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Client["🖥️ Frontend — React 18 + Vite"]
-        UI["Chat Interface<br/>(Glassmorphism UI)"]
-        MD["ReactMarkdown<br/>+ Syntax Highlighting"]
-        SRC["Accordion Source Cards<br/>with Inline Citations"]
-        THT["Agentic Thoughts Panel<br/>(Real-time SSE)"]
+    Client["Frontend (React + Vite)"] --> API
+
+    subgraph API["API Layer — FastAPI"]
+        STREAM["/api/chat/stream (SSE)"]
+        SESS["/api/sessions"]
     end
 
-    subgraph API["⚡ API Layer — FastAPI (Async)"]
-        CHAT["POST /api/chat<br/>(Synchronous)"]
-        STREAM["POST /api/chat/stream<br/>(SSE Streaming)"]
-        SESS["GET|POST|DELETE<br/>/api/sessions"]
-        HEALTH["GET /api/health"]
+    subgraph Service["Service Layer"]
+        CS["ChatService"] --> SS["SessionService"]
+        SS --> DB[("SQLite")]
     end
 
-    subgraph Service["🔧 Service Layer"]
-        CS["ChatService<br/>(History Manager)"]
-        SS["SessionService<br/>(CRUD + Auto-title)"]
-        DB[("SQLite<br/>raglaw.db")]
-    end
-
-    subgraph Pipeline["🧠 LangGraph Agentic Pipeline"]
+    subgraph Pipeline["LangGraph Agentic Pipeline"]
         direction LR
-        CTX["① Contextualize<br/><i>Query Reformulation</i>"]
-        ROUTE["② Route<br/><i>3-Way Classifier</i>"]
-        RV["③a Retrieve Vector<br/><i>Qdrant Search</i>"]
-        RG["③b Retrieve Graph<br/><i>KG + Qdrant</i>"]
-        GD["③c Generate Direct<br/><i>No Retrieval</i>"]
-        GEN["④ Generate + Cite<br/><i>Context Synthesis</i>"]
-        CTX --> ROUTE
-        ROUTE -->|"vector"| RV
-        ROUTE -->|"graph"| RG
-        ROUTE -->|"chat"| GD
-        RV --> GEN
+        CTX["Contextualize"] --> ROUTE["3-Way Router"]
+        ROUTE -->|vector| RV["Retrieve Vector"]
+        ROUTE -->|graph| RG["Retrieve Graph"]
+        ROUTE -->|chat| GD["Generate Direct"]
+        RV --> GEN["Generate + Cite"]
         RG --> GEN
     end
 
-    subgraph Storage["💾 Retrieval Layer"]
-        QD[("Qdrant<br/>Vector Database<br/><i>1024d Vietnamese Embeddings</i>")]
-        KG["Knowledge Graph<br/>(NetworkX DiGraph)<br/><i>Nodes: Document, Concept</i><br/><i>Edges: CITES, AMENDS, DEFINES</i>"]
-        EMB["Vietnamese Embedding<br/>AITeamVN/Vietnamese_Embedding_v2<br/><i>SentenceTransformers</i>"]
+    subgraph Data["Data Layer"]
+        QD[("Qdrant — Vector DB")]
+        KG["Knowledge Graph (NetworkX)"]
+        EMB["Vietnamese Embedding (1024d)"]
     end
 
-    subgraph Models["🤖 LLM Models"]
-        GF["Gemini 2.0 Flash<br/><i>(Fast, Default)</i>"]
-        GP["Gemini 1.5 Pro<br/><i>(Deep Analysis)</i>"]
-        GM["Gemma 3 27B-IT<br/><i>(Optimized)</i>"]
-        OL["Ollama Local<br/><i>(Offline)</i>"]
+    subgraph LLMs["LLM Models"]
+        GF["Gemini Flash / Pro"]
+        GM["Gemma 3 27B"]
+        OL["Ollama (Local)"]
     end
 
-    UI --> STREAM
     STREAM --> CS
     CS --> Pipeline
-    Pipeline --> Storage
-    Pipeline --> Models
-    CS --> SS --> DB
+    Pipeline --> Data
+    Pipeline --> LLMs
 ```
 
 ---
 
-## 🔬 Agentic Pipeline Deep Dive
+## Agentic Pipeline Deep Dive
 
 ### Pipeline Flow
 
@@ -227,7 +200,7 @@ Turn 3:  "Điều này liên quan tới những văn bản nào?"
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology | Purpose |
 |---|---|---|
@@ -248,23 +221,23 @@ Turn 3:  "Điều này liên quan tới những văn bản nào?"
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 RagLaw/
 │
-├── 📂 backend/
+├── backend/
 │   ├── app.py                         # FastAPI application factory + CORS + lifespan
 │   ├── config.py                      # Pydantic Settings (environment-based config)
 │   │
-│   ├── 📂 core/                       # Database & ORM models
+│   ├── core/                          # Database & ORM models
 │   │   ├── database.py                # SQLAlchemy engine, sessionmaker, get_db()
 │   │   └── models/
 │   │       ├── session.py             # ChatSession model
 │   │       └── message.py             # Message model (role, content, sources)
 │   │
-│   ├── 📂 rag/                        # 🧠 RAG Pipeline (core intelligence)
-│   │   ├── langchain_pipeline.py      # ⭐ LangGraph agentic pipeline (528 lines)
+│   ├── rag/                           # RAG Pipeline (core intelligence)
+│   │   ├── langchain_pipeline.py      # LangGraph agentic pipeline (528 lines)
 │   │   ├── knowledge_graph.py         # NetworkX KG builder + traversal
 │   │   ├── graph_pipeline.py          # GraphRAG hybrid pipeline
 │   │   ├── adk_pipeline.py            # Google ADK agent pipeline
@@ -272,41 +245,41 @@ RagLaw/
 │   │   ├── data_loader.py             # Legal document JSON loader + splitter
 │   │   └── ingest_qdrant.py           # Qdrant collection builder
 │   │
-│   ├── 📂 routers/                    # FastAPI route handlers
+│   ├── routers/                       # FastAPI route handlers
 │   │   ├── chat.py                    # POST /chat, /chat/stream, /chat/adk/stream
 │   │   ├── sessions.py                # CRUD /sessions
 │   │   ├── documents.py               # GET /documents/{id}
 │   │   ├── graph.py                   # GET /graph/stats, /graph/stream
 │   │   └── health.py                  # GET /health
 │   │
-│   └── 📂 services/                   # Business logic layer
+│   └── services/                      # Business logic layer
 │       ├── chat_service.py            # ChatService (pipeline + in-memory history)
 │       ├── session_service.py         # Session CRUD + auto-titling
 │       ├── document_service.py        # Document lookup
 │       └── lookup_service.py          # Full-text document search
 │
-├── 📂 frontend/
+├── frontend/
 │   └── src/
 │       ├── App.jsx                    # Root component (theme management)
 │       ├── components/
-│       │   ├── ChatInterface.jsx      # 🎨 Main chat UI (400+ lines)
+│       │   ├── ChatInterface.jsx      # Main chat UI 
 │       │   └── ChatInterface.css      # Glassmorphism dark-mode styling
 │       └── styles/
 │           ├── index.css              # Design tokens & CSS variables
 │           └── App.css                # Layout & background decorations
 │
-├── 📂 data/                           # Legal document corpus
+├── data/                              # Legal document corpus
 │   ├── laws/legal_corpus.json         # Vietnamese law articles (Git LFS)
 │   └── law_graph.json                 # Pre-built Knowledge Graph
 │
 ├── requirements.txt                   # Python dependencies
 ├── .env                               # Environment configuration
-└── README.md                          # 📖 You are here
+└── README.md                          # You are here
 ```
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -428,7 +401,7 @@ The `docker-compose.yml` includes:
 
 ---
 
-## 📡 API Reference
+## API Reference
 
 ### Chat
 
@@ -478,7 +451,7 @@ The `docker-compose.yml` includes:
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
