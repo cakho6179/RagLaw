@@ -1,5 +1,0 @@
-"""Text chunker utilities."""
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-def get_chunker(chunk_size=1000, chunk_overlap=200):
-    return RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
