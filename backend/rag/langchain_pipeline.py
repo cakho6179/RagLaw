@@ -143,6 +143,35 @@ class AgenticRAGPipeline:
 
     # ── Graph nodes ───────────────────────────────────────────────────────
 
+    def _contextualize_query(self, state: AgenticState) -> AgenticState:
+        """Rewrite the query using chat history for standalone context."""
+        history = state.get("history", [])
+        if not history:
+            # No previous conversation, use query as-is
+            state["current_query"] = state["query"]
+            return state
+
+        contextualize_prompt = ChatPromptTemplate.from_messages(
+            [
+                MessagesPlaceholder("history"),
+                (
+                    "human",
+                    (
+                        "Dựa trên lịch sử hội thoại ở trên và câu hỏi mới nhất của người dùng, "
+                        "hãy viết lại câu hỏi thành một câu độc lập, đầy đủ ngữ cảnh để có thể hiểu được mà không cần đọc lại lịch sử.\n"
+                        "Nếu câu hỏi đã đầy đủ, giữ nguyên. Chỉ trả về câu hỏi đã viết lại, không giải thích gì thêm.\n\n"
+                        "Câu hỏi: {query}"
+                    ),
+                ),
+            ]
+        )
+        llm = self.models.get(state.get("model_name", "gemma"), self.model)
+        chain = contextualize_prompt | llm | StrOutputParser()
+        rewritten = chain.invoke({"history": history, "query": state["query"]}).strip()
+        logger.info(f"Query contextualized: '{state['query']}' -> '{rewritten}'")
+        state["current_query"] = rewritten
+        return state
+
     def _route_query(self, state: AgenticState) -> AgenticState:
         """Decide if the query needs legal retrieval."""
         router_prompt = ChatPromptTemplate.from_messages(
@@ -160,7 +189,8 @@ class AgenticRAGPipeline:
         )
         llm = self.models.get(state.get("model_name", "gemma"), self.model)
         chain = router_prompt | llm | StrOutputParser()
-        result = chain.invoke({"query": state["query"]}).strip().lower()
+        # Use the contextualized query for better routing
+        result = chain.invoke({"query": state["current_query"]}).strip().lower()
         state["needs_retrieval"] = "yes" in result
         return state
 
@@ -175,19 +205,26 @@ class AgenticRAGPipeline:
 
     def _generate_with_context(self, state: AgenticState) -> AgenticState:
         """Generate answer using retrieved context."""
-        context = "\n\n---\n\n".join(
-            doc.page_content for doc in state["documents"][: self.top_k]
-        )
+        formatted_context_parts = []
+        for i, doc in enumerate(state["documents"][: self.top_k]):
+            title = doc.metadata.get("document_title", "Tài liệu không tên")
+            formatted_context_parts.append(
+                f"Tài liệu [{i + 1}] ({title}):\n{doc.page_content}"
+            )
+
+        context = "\n\n---\n\n".join(formatted_context_parts)
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 MessagesPlaceholder("history"),
                 (
                     "human",
                     (
-                        "Bạn là trợ lý pháp lý chuyên nghiệp về pháp luật Việt Nam.\n"
-                        "Hãy trả lời câu hỏi DỰA TRÊN các tài liệu pháp luật được cung cấp.\n"
-                        "Nếu thông tin không đủ, hãy nói rõ thay vì tự bịa đặt.\n"
-                        "Trả lời bằng tiếng Việt, rõ ràng và chuyên nghiệp.\n\n"
+                        "Bạn là trợ lý pháp lý chuyên nghiệp về pháp luật Việt Nam của hệ thống RagLaw.\n"
+                        "Hãy trả lời câu hỏi DỰA TRÊN các TÀI LIỆU được cung cấp dưới đây.\n"
+                        "BẮT BUỘC phải trích dẫn nguồn bằng cách thêm số thứ tự tài liệu trong ngoặc vuông (ví dụ: [1], [2]) vào cuối mỗi câu hoặc đoạn văn mà bạn lấy thông tin từ tài liệu đó.\n"
+                        "Nếu thông tin không đủ để trả lời, hãy nói rõ thay vì tự bịa đặt.\n"
+                        "Trả lời bằng tiếng Việt, rõ ràng, dễ hiểu và chuyên nghiệp.\n\n"
                         "TÀI LIỆU:\n{context}\n\n"
                         "CÂU HỎI: {query}"
                     ),
@@ -242,12 +279,14 @@ class AgenticRAGPipeline:
     def _build_graph(self):
         g = StateGraph(AgenticState)
 
+        g.add_node("contextualize", self._contextualize_query)
         g.add_node("route", self._route_query)
         g.add_node("retrieve", self._retrieve)
         g.add_node("generate", self._generate_with_context)
         g.add_node("generate_direct", self._generate_direct)
 
-        g.set_entry_point("route")
+        g.set_entry_point("contextualize")
+        g.add_edge("contextualize", "route")
         g.add_conditional_edges("route", self._should_retrieve)
         g.add_edge("retrieve", "generate")
         g.add_edge("generate", END)
@@ -286,28 +325,86 @@ class AgenticRAGPipeline:
         history: List[BaseMessage] | None = None,
         model_name: str = "gemma",
     ) -> AsyncGenerator[Dict, None]:
-        """Run the pipeline and yield SSE-compatible dicts."""
+        """Run the pipeline and yield SSE-compatible dicts with thoughts."""
         import asyncio
-        from functools import partial
 
-        loop = asyncio.get_event_loop()
+        if not self._initialized:
+            self.startup()
+
+        initial: AgenticState = {
+            "query": query,
+            "current_query": query,
+            "history": history or [],
+            "documents": [],
+            "relevant_documents": [],
+            "rewrite_count": 0,
+            "needs_retrieval": True,
+            "answer": "",
+            "sources": [],
+            "model_name": model_name,
+        }
 
         yield {"type": "status", "data": "🔍 Đang phân tích câu hỏi..."}
 
-        # Run the blocking graph in a thread
-        result = await loop.run_in_executor(
-            None, partial(self.respond, query, history, model_name=model_name)
-        )
+        # Use LangGraph's async stream to yield thoughts at each node
+        async for step in self.graph.astream(initial, stream_mode="updates"):
+            for node_name, state_update in step.items():
+                if node_name == "contextualize":
+                    cq = state_update.get("current_query", query)
+                    if cq != query:
+                        yield {
+                            "type": "thought",
+                            "data": {
+                                "agent": "Contextualizer",
+                                "text": f"Viết lại câu hỏi: '{cq}'",
+                            },
+                        }
+                    else:
+                        yield {
+                            "type": "thought",
+                            "data": {
+                                "agent": "Contextualizer",
+                                "text": "Câu hỏi đã đầy đủ ngữ cảnh.",
+                            },
+                        }
+                elif node_name == "route":
+                    needs_retrieval = state_update.get("needs_retrieval", True)
+                    decision = (
+                        "Cần phân tích tài liệu pháp luật"
+                        if needs_retrieval
+                        else "Giao tiếp thông thường, bỏ qua truy xuất"
+                    )
+                    yield {
+                        "type": "thought",
+                        "data": {"agent": "Router", "text": decision},
+                    }
+                elif node_name == "retrieve":
+                    docs = state_update.get("documents", [])
+                    yield {
+                        "type": "thought",
+                        "data": {
+                            "agent": "Retriever",
+                            "text": f"Đã trích xuất {len(docs)} tài liệu liên quan từ CSDL.",
+                        },
+                    }
+                elif node_name == "generate" or node_name == "generate_direct":
+                    yield {
+                        "type": "thought",
+                        "data": {
+                            "agent": "Generator",
+                            "text": "Đang tổng hợp thông tin và phản hồi...",
+                        },
+                    }
 
-        # Yield sources first
-        yield {"type": "sources", "data": result["sources"]}
+                    if "sources" in state_update and state_update["sources"]:
+                        yield {"type": "sources", "data": state_update["sources"]}
 
-        # Stream the answer token by token (simulate since LangGraph is sync here)
-        answer = result["answer"]
-        chunk_size = 8
-        for i in range(0, len(answer), chunk_size):
-            yield {"type": "chunk", "data": answer[i : i + chunk_size]}
-            await asyncio.sleep(0)
+                    answer = state_update.get("answer", "")
+                    # Stream tokens out linearly for the UX effect
+                    chunk_size = 8
+                    for i in range(0, len(answer), chunk_size):
+                        yield {"type": "chunk", "data": answer[i : i + chunk_size]}
+                        await asyncio.sleep(0.01)
 
         yield {"type": "done", "data": ""}
 

@@ -44,37 +44,6 @@ function AppContent() {
 
     return (
         <div className="app">
-            {/* Navigation Bar */}
-            <nav className="app-nav">
-                <div className="nav-left">
-                    <span className="nav-logo">⚖️ RagLaw</span>
-                    <button
-                        className={`nav-tab ${currentPage === 'chat' ? 'active' : ''}`}
-                        onClick={() => setCurrentPage('chat')}
-                    >
-                        💬 Chat
-                    </button>
-                    <button
-                        className={`nav-tab ${currentPage === 'documents' ? 'active' : ''}`}
-                        onClick={() => setCurrentPage('documents')}
-                    >
-                        📚 Tra cứu
-                    </button>
-                </div>
-                <div className="nav-right">
-                    <button className="nav-theme-btn" onClick={toggleTheme}>
-                        {theme === 'dark' ? '☀️' : '🌙'}
-                    </button>
-                    {isAuthenticated ? (
-                        <UserMenu />
-                    ) : (
-                        <button className="nav-login-btn" onClick={() => setShowAuth(true)}>
-                            🔐 Đăng nhập
-                        </button>
-                    )}
-                </div>
-            </nav>
-
             {/* Page Content */}
             <main className="app-main">
                 {currentPage === 'chat' ? (

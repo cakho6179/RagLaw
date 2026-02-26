@@ -82,7 +82,7 @@ function ChatInterface({ theme, onThemeToggle }) {
         e.stopPropagation()
         try {
             await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' })
-            setSessions(prev => prev.filter(s => s.session_id !== sessionId))
+            setSessions(prev => prev.filter(s => s.id !== sessionId))
             if (currentSessionId === sessionId) {
                 startNewChat()
             }
@@ -175,9 +175,9 @@ function ChatInterface({ theme, onThemeToggle }) {
                     ) : (
                         sessions.map(session => (
                             <div
-                                key={session.session_id}
-                                className={`session-card ${currentSessionId === session.session_id ? 'active' : ''}`}
-                                onClick={() => loadSession(session.session_id)}
+                                key={session.id}
+                                className={`session-card ${currentSessionId === session.id ? 'active' : ''}`}
+                                onClick={() => loadSession(session.id)}
                             >
                                 <div className="session-icon">💬</div>
                                 <div className="session-info">
@@ -186,7 +186,7 @@ function ChatInterface({ theme, onThemeToggle }) {
                                 </div>
                                 <button
                                     className="delete-btn"
-                                    onClick={(e) => deleteSession(e, session.session_id)}
+                                    onClick={(e) => deleteSession(e, session.id)}
                                     title="Xóa"
                                 >🗑️</button>
                             </div>
