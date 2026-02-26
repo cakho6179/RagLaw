@@ -25,6 +25,7 @@ from backend.rag.adapters import (
     VietnameseDenseAdapter,
     VietnameseSparseAdapter,
 )
+from backend.rag.knowledge_graph import get_knowledge_graph
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class AgenticState(TypedDict):
     relevant_documents: List[Document]
     rewrite_count: int
     needs_retrieval: bool
+    retrieval_mode: str  # "chat", "vector", or "graph"
     answer: str
     sources: List[Dict[str, Any]]
     model_name: str
@@ -76,6 +78,7 @@ class AgenticRAGPipeline:
         self._initialized = False
         self.vector_store: Optional[QdrantVectorStore] = None
         self.model: Optional[ChatGoogleGenerativeAI] = None
+        self.kg = None
         self.graph = None
 
     # ── Init ──────────────────────────────────────────────────────────────
@@ -137,6 +140,14 @@ class AgenticRAGPipeline:
 
         self.model = self.models["gemma"]  # Default fallback
 
+        # Initialize Knowledge Graph
+        try:
+            self.kg = get_knowledge_graph()
+            logger.info(f"✅ Knowledge Graph loaded: {self.kg.get_stats()}")
+        except Exception as e:
+            logger.warning(f"⚠️ Knowledge Graph unavailable: {e}")
+            self.kg = None
+
         self.graph = self._build_graph()
         self._initialized = True
         logger.info("✅ AgenticRAGPipeline initialized")
@@ -173,15 +184,19 @@ class AgenticRAGPipeline:
         return state
 
     def _route_query(self, state: AgenticState) -> AgenticState:
-        """Decide if the query needs legal retrieval."""
+        """3-way router: chat / vector / graph."""
         router_prompt = ChatPromptTemplate.from_messages(
             [
                 (
                     "human",
                     (
                         "Bạn là bộ phân loại câu hỏi cho hệ thống hỏi đáp pháp luật Việt Nam.\n"
-                        "Trả lời 'yes' nếu câu hỏi liên quan đến pháp luật, quy định, điều khoản, nghị định, thông tư, bộ luật.\n"
-                        "Trả lời 'no' nếu câu hỏi là câu chào hỏi, tán gẫu, hoặc không liên quan đến pháp luật."
+                        "Phân loại câu hỏi vào MỘT trong 3 nhóm:\n"
+                        "- 'vector': Câu hỏi pháp luật thông thường, cần tra cứu nội dung luật (ví dụ: điều kiện kết hôn, quyền lao động, thủ tục đăng ký...).\n"
+                        "- 'graph': Câu hỏi về MỐI QUAN HỆ giữa các điều luật, văn bản liên quan, dẫn chiếu, sửa đổi bổ sung "
+                        "(ví dụ: 'Điều 158 liên quan tới những điều nào?', 'Luật này được sửa đổi bởi văn bản nào?', 'Nghị định hướng dẫn là gì?').\n"
+                        "- 'chat': Không liên quan đến pháp luật — chào hỏi, tán gẫu.\n\n"
+                        "Chỉ trả về DUY NHẤT một từ: vector, graph, hoặc chat."
                     ),
                 ),
                 ("human", "{query}"),
@@ -189,18 +204,86 @@ class AgenticRAGPipeline:
         )
         llm = self.models.get(state.get("model_name", "gemma"), self.model)
         chain = router_prompt | llm | StrOutputParser()
-        # Use the contextualized query for better routing
         result = chain.invoke({"query": state["current_query"]}).strip().lower()
-        state["needs_retrieval"] = "yes" in result
+
+        if "graph" in result:
+            if self.kg is not None:
+                state["retrieval_mode"] = "graph"
+            else:
+                state["retrieval_mode"] = "vector"  # Fallback if KG unavailable
+            state["needs_retrieval"] = True
+        elif "vector" in result:
+            state["retrieval_mode"] = "vector"
+            state["needs_retrieval"] = True
+        else:
+            state["retrieval_mode"] = "chat"
+            state["needs_retrieval"] = False
+
+        logger.info(f"Router decision: {state['retrieval_mode']}")
         return state
 
-    def _retrieve(self, state: AgenticState) -> AgenticState:
-        """Retrieve documents from Qdrant."""
+    def _retrieve_vector(self, state: AgenticState) -> AgenticState:
+        """Retrieve documents from Qdrant vector search."""
         retriever = self.vector_store.as_retriever(
             search_kwargs={"k": self.retrieval_k}
         )
         docs = retriever.invoke(state["current_query"])
         state["documents"] = docs
+        return state
+
+    def _retrieve_graph(self, state: AgenticState) -> AgenticState:
+        """Retrieve documents via Knowledge Graph traversal + Qdrant."""
+        query = state["current_query"]
+
+        # Step 1: Find related doc IDs via Knowledge Graph
+        related_ids = self.kg.get_related_documents(query, hops=2)
+        logger.info(f"KG found {len(related_ids)} related doc IDs: {related_ids[:5]}")
+
+        # Step 2: Also do a vector search as fallback/complement
+        retriever = self.vector_store.as_retriever(
+            search_kwargs={"k": self.retrieval_k}
+        )
+        vector_docs = retriever.invoke(query)
+
+        # Step 3: If KG found related concepts, search for those too
+        kg_docs = []
+        if related_ids:
+            # Search Qdrant with the related document IDs as context
+            kg_query = f"{query} (Liên quan: {', '.join(related_ids[:5])})"
+            kg_docs = retriever.invoke(kg_query)
+
+        # Step 4: Merge results — KG docs first, then vector docs (deduplicate)
+        seen_contents = set()
+        merged = []
+        for doc in kg_docs + vector_docs:
+            key = doc.page_content[:200]
+            if key not in seen_contents:
+                seen_contents.add(key)
+                merged.append(doc)
+
+        # Step 5: Also add graph context as metadata
+        neighbours = []
+        for nid in related_ids[:3]:
+            node_id = self.kg._doc_id_to_node.get(nid)
+            if node_id:
+                neighbours.extend(self.kg.get_neighbours(node_id, hops=1))
+
+        if neighbours:
+            graph_context = "\n".join(
+                f"- {nb.get('title', nb.get('name', nb.get('node_id', '')))}"
+                for nb in neighbours[:10]
+            )
+            # Prepend a graph-context doc
+            graph_doc = Document(
+                page_content=f"[Quan hệ pháp lý từ Knowledge Graph]:\n{graph_context}",
+                metadata={
+                    "source": "knowledge_graph",
+                    "document_title": "Quan hệ giữa các văn bản",
+                },
+            )
+            merged.insert(0, graph_doc)
+
+        state["documents"] = merged[: self.retrieval_k]
         return state
 
     def _generate_with_context(self, state: AgenticState) -> AgenticState:
@@ -272,7 +355,13 @@ class AgenticRAGPipeline:
     # ── Routing conditions ────────────────────────────────────────────────
 
     def _should_retrieve(self, state: AgenticState) -> str:
-        return "retrieve" if state["needs_retrieval"] else "generate_direct"
+        mode = state.get("retrieval_mode", "chat")
+        if mode == "graph":
+            return "retrieve_graph"
+        elif mode == "vector":
+            return "retrieve_vector"
+        else:
+            return "generate_direct"
 
     # ── Build graph ───────────────────────────────────────────────────────
 
@@ -281,14 +370,16 @@ class AgenticRAGPipeline:
 
         g.add_node("contextualize", self._contextualize_query)
         g.add_node("route", self._route_query)
-        g.add_node("retrieve", self._retrieve)
+        g.add_node("retrieve_vector", self._retrieve_vector)
+        g.add_node("retrieve_graph", self._retrieve_graph)
         g.add_node("generate", self._generate_with_context)
         g.add_node("generate_direct", self._generate_direct)
 
         g.set_entry_point("contextualize")
         g.add_edge("contextualize", "route")
         g.add_conditional_edges("route", self._should_retrieve)
-        g.add_edge("retrieve", "generate")
+        g.add_edge("retrieve_vector", "generate")
+        g.add_edge("retrieve_graph", "generate")
         g.add_edge("generate", END)
         g.add_edge("generate_direct", END)
 
@@ -312,6 +403,7 @@ class AgenticRAGPipeline:
             "relevant_documents": [],
             "rewrite_count": 0,
             "needs_retrieval": True,
+            "retrieval_mode": "chat",
             "answer": "",
             "sources": [],
             "model_name": model_name,
@@ -339,6 +431,7 @@ class AgenticRAGPipeline:
             "relevant_documents": [],
             "rewrite_count": 0,
             "needs_retrieval": True,
+            "retrieval_mode": "chat",
             "answer": "",
             "sources": [],
             "model_name": model_name,
@@ -368,23 +461,31 @@ class AgenticRAGPipeline:
                             },
                         }
                 elif node_name == "route":
-                    needs_retrieval = state_update.get("needs_retrieval", True)
-                    decision = (
-                        "Cần phân tích tài liệu pháp luật"
-                        if needs_retrieval
-                        else "Giao tiếp thông thường, bỏ qua truy xuất"
-                    )
+                    mode = state_update.get("retrieval_mode", "chat")
+                    mode_labels = {
+                        "vector": "📊 Tra cứu bằng Vector Search (Qdrant)",
+                        "graph": "🔗 Tra cứu bằng Knowledge Graph + Vector Search",
+                        "chat": "💬 Giao tiếp thông thường, bỏ qua truy xuất",
+                    }
                     yield {
                         "type": "thought",
-                        "data": {"agent": "Router", "text": decision},
+                        "data": {
+                            "agent": "Router",
+                            "text": mode_labels.get(mode, mode),
+                        },
                     }
-                elif node_name == "retrieve":
+                elif node_name in ("retrieve_vector", "retrieve_graph"):
                     docs = state_update.get("documents", [])
+                    source_label = (
+                        "Knowledge Graph + Qdrant"
+                        if node_name == "retrieve_graph"
+                        else "Qdrant"
+                    )
                     yield {
                         "type": "thought",
                         "data": {
                             "agent": "Retriever",
-                            "text": f"Đã trích xuất {len(docs)} tài liệu liên quan từ CSDL.",
+                            "text": f"Đã trích xuất {len(docs)} tài liệu từ {source_label}.",
                         },
                     }
                 elif node_name == "generate" or node_name == "generate_direct":
