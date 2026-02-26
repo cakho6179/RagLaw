@@ -1,276 +1,490 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.1.0-blue.svg" alt="Version">
-  <img src="https://img.shields.io/badge/python-3.10+-green.svg" alt="Python">
-  <img src="https://img.shields.io/badge/FastAPI-0.104+-009688.svg" alt="FastAPI">
-  <img src="https://img.shields.io/badge/Qdrant-1.7+-dc382d.svg" alt="Qdrant">
-  <img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="License">
+  <img src="https://img.shields.io/badge/version-5.0-6366f1.svg?style=for-the-badge" alt="Version">
+  <img src="https://img.shields.io/badge/python-3.10+-3776AB.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/FastAPI-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
+  <img src="https://img.shields.io/badge/LangChain-1C3C3C.svg?style=for-the-badge&logo=langchain&logoColor=white" alt="LangChain">
+  <img src="https://img.shields.io/badge/LangGraph-FF6F00.svg?style=for-the-badge" alt="LangGraph">
+  <img src="https://img.shields.io/badge/Qdrant-dc382d.svg?style=for-the-badge" alt="Qdrant">
+  <img src="https://img.shields.io/badge/NetworkX-4C9AFF.svg?style=for-the-badge" alt="NetworkX">
+  <img src="https://img.shields.io/badge/React_18-61DAFB.svg?style=for-the-badge&logo=react&logoColor=black" alt="React">
+  <img src="https://img.shields.io/badge/Gemini_API-4285F4.svg?style=for-the-badge&logo=google&logoColor=white" alt="Gemini">
+  <img src="https://img.shields.io/badge/license-MIT-yellow.svg?style=for-the-badge" alt="License">
 </p>
 
-<h1 align="center">RagLaw</h1>
+<h1 align="center">⚖️ RagLaw</h1>
+
+<h3 align="center">Agentic RAG System for Vietnamese Legal Document Q&A</h3>
 
 <p align="center">
-  <strong>Vietnamese Legal Document RAG System</strong>
+  An end-to-end <b>Retrieval-Augmented Generation</b> system that leverages <b>LangGraph agentic orchestration</b>,<br>
+  <b>Qdrant vector search</b>, <b>Knowledge Graph traversal</b>, and <b>multi-model LLM inference</b><br>
+  to deliver accurate, cited answers about Vietnamese law with <b>real-time streaming</b>.
 </p>
 
+<br>
+
 <p align="center">
-  Retrieval-Augmented Generation for Vietnamese legal question answering,<br>
-  powered by Qdrant hybrid search, cross-encoder reranking, and multi-LLM support.
+  <img src="docs/demo_screenshot.png" alt="RagLaw Demo" width="800">
 </p>
+
+<p align="center"><i>Chat interface with real-time agentic thoughts, inline citations, and interactive source cards</i></p>
 
 ---
 
-## Features
+## 📋 Table of Contents
 
-| Category | Highlights |
-|----------|------------|
-| **Retrieval** | Qdrant hybrid search (dense + sparse), RRF fusion, cross-encoder reranking |
-| **Embeddings** | 4 Vietnamese models benchmarked – `hcmute_wseg` (NDCG 0.908) is default |
-| **LLMs** | Anthropic-compatible proxy, Google Gemini, OpenAI, local Ollama |
-| **Pipeline** | Unified + Qdrant pipelines, query expansion, HyDE, Pro/Flash modes |
-| **Auth** | JWT authentication, session management, SQLAlchemy database |
-| **Frontend** | React + Vite SPA, markdown rendering, clickable citations |
+- [Key Highlights](#-key-highlights)
+- [System Architecture](#-system-architecture)
+- [Agentic Pipeline Deep Dive](#-agentic-pipeline-deep-dive)
+- [Knowledge Graph](#-knowledge-graph)
+- [Tech Stack](#-tech-stack)
+- [Project Structure](#-project-structure)
+- [Getting Started](#-getting-started)
+- [API Reference](#-api-reference)
+- [Design Decisions](#-design-decisions)
+- [Performance](#-performance)
+- [Roadmap](#-roadmap)
+- [License](#-license)
 
 ---
 
-## Architecture
+## 🎯 Key Highlights
+
+<table>
+<tr>
+<td width="50%">
+
+### 🧠 Agentic RAG Pipeline
+Not a simple retrieve-then-generate. Uses a **LangGraph state machine** with intelligent routing, contextual query reformulation, and multi-strategy retrieval.
+
+</td>
+<td width="50%">
+
+### 🔀 3-Way Smart Router
+LLM classifies queries into `vector` (content search), `graph` (relationship traversal), or `chat` (direct response) for optimal retrieval strategy.
+
+</td>
+</tr>
+<tr>
+<td>
+
+### 🔄 History-Aware Contextualizer
+Rewrites follow-up questions into standalone queries using conversation history, solving the classic **multi-turn RAG problem**.
+
+</td>
+<td>
+
+### 🔗 Knowledge Graph + Vector Hybrid
+Combines **NetworkX** legal entity graph with **Qdrant** dense vector search for comprehensive document discovery.
+
+</td>
+</tr>
+<tr>
+<td>
+
+### 📝 Inline Citations
+LLM responses include verifiable `[1]`, `[2]` references mapped to expandable source document cards.
+
+</td>
+<td>
+
+### 🤖 Multi-Model Hot Swap
+**Gemini Flash**, **Gemini Pro**, **Gemma 3 27B**, and **local Ollama** — switch models per-message without restart.
+
+</td>
+</tr>
+</table>
+
+---
+
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Frontend["Frontend — React + Vite"]
-        UI[Chat Interface]
-        MODE[Pro / Flash Toggle]
+    subgraph Client["🖥️ Frontend — React 18 + Vite"]
+        UI["Chat Interface<br/>(Glassmorphism UI)"]
+        MD["ReactMarkdown<br/>+ Syntax Highlighting"]
+        SRC["Accordion Source Cards<br/>with Inline Citations"]
+        THT["Agentic Thoughts Panel<br/>(Real-time SSE)"]
     end
 
-    subgraph Backend["FastAPI Backend"]
-        API[REST API + JWT Auth]
-
-        subgraph Pipeline["RAG Pipeline"]
-            QE[1. Query Expansion]
-            QD[2. Qdrant Hybrid Search]
-            RR[3. Cross-Encoder Rerank]
-            GEN[4. LLM Generation]
-        end
-
-        subgraph LLM["LLM Providers"]
-            ANTHROPIC[Anthropic API]
-            GEMINI[Google Gemini]
-            LOCAL[Local / Ollama]
-        end
+    subgraph API["⚡ API Layer — FastAPI (Async)"]
+        CHAT["POST /api/chat<br/>(Synchronous)"]
+        STREAM["POST /api/chat/stream<br/>(SSE Streaming)"]
+        SESS["GET|POST|DELETE<br/>/api/sessions"]
+        HEALTH["GET /api/health"]
     end
 
-    subgraph Data["Data Layer"]
-        QDRANT[(Qdrant Vector DB)]
-        SQLITE[(SQLite — Sessions)]
+    subgraph Service["🔧 Service Layer"]
+        CS["ChatService<br/>(History Manager)"]
+        SS["SessionService<br/>(CRUD + Auto-title)"]
+        DB[("SQLite<br/>raglaw.db")]
     end
 
-    UI --> API
-    MODE --> API
-    API --> QE --> QD --> RR --> GEN
-    GEN --> ANTHROPIC & GEMINI & LOCAL
-    QD --> QDRANT
-    API --> SQLITE
+    subgraph Pipeline["🧠 LangGraph Agentic Pipeline"]
+        direction LR
+        CTX["① Contextualize<br/><i>Query Reformulation</i>"]
+        ROUTE["② Route<br/><i>3-Way Classifier</i>"]
+        RV["③a Retrieve Vector<br/><i>Qdrant Search</i>"]
+        RG["③b Retrieve Graph<br/><i>KG + Qdrant</i>"]
+        GD["③c Generate Direct<br/><i>No Retrieval</i>"]
+        GEN["④ Generate + Cite<br/><i>Context Synthesis</i>"]
+        CTX --> ROUTE
+        ROUTE -->|"vector"| RV
+        ROUTE -->|"graph"| RG
+        ROUTE -->|"chat"| GD
+        RV --> GEN
+        RG --> GEN
+    end
 
-    style Frontend fill:#1e1e2e,stroke:#6366f1,color:#fff
-    style Backend fill:#1e1e2e,stroke:#10b981,color:#fff
-    style Pipeline fill:#2d2d3d,stroke:#f59e0b,color:#fff
-    style LLM fill:#2d2d3d,stroke:#ec4899,color:#fff
-    style Data fill:#1e1e2e,stroke:#8b5cf6,color:#fff
+    subgraph Storage["💾 Retrieval Layer"]
+        QD[("Qdrant<br/>Vector Database<br/><i>1024d Vietnamese Embeddings</i>")]
+        KG["Knowledge Graph<br/>(NetworkX DiGraph)<br/><i>Nodes: Document, Concept</i><br/><i>Edges: CITES, AMENDS, DEFINES</i>"]
+        EMB["Vietnamese Embedding<br/>AITeamVN/Vietnamese_Embedding_v2<br/><i>SentenceTransformers</i>"]
+    end
+
+    subgraph Models["🤖 LLM Models"]
+        GF["Gemini 2.0 Flash<br/><i>(Fast, Default)</i>"]
+        GP["Gemini 1.5 Pro<br/><i>(Deep Analysis)</i>"]
+        GM["Gemma 3 27B-IT<br/><i>(Optimized)</i>"]
+        OL["Ollama Local<br/><i>(Offline)</i>"]
+    end
+
+    UI --> STREAM
+    STREAM --> CS
+    CS --> Pipeline
+    Pipeline --> Storage
+    Pipeline --> Models
+    CS --> SS --> DB
 ```
 
 ---
 
-## Quick Start
+## 🔬 Agentic Pipeline Deep Dive
+
+### Pipeline Flow
+
+The core of the system is a **stateful, graph-based pipeline** built with [LangGraph](https://github.com/langchain-ai/langgraph). Unlike traditional linear RAG, each query flows through an intelligent decision graph:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Contextualize: User Query + History
+    Contextualize --> Route: Standalone Query
+    Route --> RetrieveVector: "vector" (Legal Q&A)
+    Route --> RetrieveGraph: "graph" (Cross-references)
+    Route --> GenerateDirect: "chat" (Greeting/Chat)
+    RetrieveVector --> Generate: Documents
+    RetrieveGraph --> Generate: Documents + Graph Context
+    Generate --> [*]: Answer + Sources + Citations
+    GenerateDirect --> [*]: Answer (No Sources)
+```
+
+### Node Details
+
+| # | Node | Input → Output | Technique |
+|:---:|---|---|---|
+| ① | **Contextualize** | `(query, history)` → `standalone_query` | LLM rewrites follow-up using `MessagesPlaceholder` |
+| ② | **Route** | `standalone_query` → `{vector \| graph \| chat}` | Zero-shot LLM classification (3-class) |
+| ③a | **Retrieve Vector** | `query` → `documents[]` | Qdrant dense cosine similarity (top-k=10) |
+| ③b | **Retrieve Graph** | `query` → `documents[] + graph_context` | NetworkX BFS (2-hop) → Qdrant hybrid → merge + dedup |
+| ③c | **Generate Direct** | `(query, history)` → `answer` | LLM direct response (no context) |
+| ④ | **Generate + Cite** | `(query, documents, history)` → `(answer, sources)` | LLM with mandatory `[1][2]` citation injection |
+
+### State Schema
+
+```python
+class AgenticState(TypedDict):
+    query: str                        # Original user question
+    current_query: str                # Rewritten standalone query
+    history: List[BaseMessage]        # Conversation history (LangChain format)
+    documents: List[Document]         # Retrieved documents from Qdrant/KG
+    retrieval_mode: str               # "chat" | "vector" | "graph"
+    needs_retrieval: bool             # Router decision flag
+    answer: str                       # Final generated answer
+    sources: List[Dict[str, Any]]     # Source citations with metadata
+    model_name: str                   # Active LLM model key
+```
+
+### Multi-Turn Context Resolution
+
+```
+Turn 1:  "Quyền sở hữu tài sản?"
+         → Contextualize: keeps as-is (no history)
+         → Route: vector → Qdrant search
+         → Answer: "Theo Điều 158 BLDS 2015... [1]"
+
+Turn 2:  "Giải thích chi tiết hơn"
+         → Contextualize: rewrites to "Giải thích chi tiết về quyền sở hữu
+            tài sản theo Điều 158 Bộ luật Dân sự 2015"
+         → Route: vector → accurate results with full context
+
+Turn 3:  "Điều này liên quan tới những văn bản nào?"
+         → Contextualize: rewrites to "Điều 158 BLDS 2015 về quyền
+            sở hữu tài sản liên quan tới những văn bản pháp luật nào?"
+         → Route: graph (cross-reference question)
+         → KG traversal + Qdrant → comprehensive related documents
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **API Framework** | FastAPI | Async REST API with auto-generated OpenAPI docs |
+| **Orchestration** | LangGraph | Stateful agent graph with conditional routing |
+| **LLM Framework** | LangChain | Prompt templates, output parsers, chat model abstraction |
+| **Vector Database** | Qdrant | Dense/hybrid/sparse semantic retrieval |
+| **Knowledge Graph** | NetworkX | Legal document relationship graph with BFS traversal |
+| **Embeddings** | SentenceTransformers | `AITeamVN/Vietnamese_Embedding_v2` (1024 dims) |
+| **LLM Models** | Google Gemini API | Flash 2.0, Pro 1.5, Gemma 3 27B-IT |
+| **Local LLM** | Ollama | Offline inference (llama3, gemma3:4b) |
+| **ORM** | SQLAlchemy | Session & message persistence |
+| **Database** | SQLite | Lightweight, zero-config storage |
+| **Frontend** | React 18 + Vite | SPA with hot module replacement |
+| **Markdown** | ReactMarkdown + remark-gfm | Rich text rendering with LaTeX support |
+| **Streaming** | Server-Sent Events (SSE) | Real-time token streaming + thought events |
+| **Styling** | CSS3 | Glassmorphism, dark mode, micro-animations |
+
+---
+
+## 📁 Project Structure
+
+```
+RagLaw/
+│
+├── 📂 backend/
+│   ├── app.py                         # FastAPI application factory + CORS + lifespan
+│   ├── config.py                      # Pydantic Settings (environment-based config)
+│   │
+│   ├── 📂 core/                       # Database & ORM models
+│   │   ├── database.py                # SQLAlchemy engine, sessionmaker, get_db()
+│   │   └── models/
+│   │       ├── session.py             # ChatSession model
+│   │       └── message.py             # Message model (role, content, sources)
+│   │
+│   ├── 📂 rag/                        # 🧠 RAG Pipeline (core intelligence)
+│   │   ├── langchain_pipeline.py      # ⭐ LangGraph agentic pipeline (528 lines)
+│   │   ├── knowledge_graph.py         # NetworkX KG builder + traversal
+│   │   ├── graph_pipeline.py          # GraphRAG hybrid pipeline
+│   │   ├── adk_pipeline.py            # Google ADK agent pipeline
+│   │   ├── adapters.py                # Vietnamese embedding/sparse adapters
+│   │   ├── data_loader.py             # Legal document JSON loader + splitter
+│   │   └── ingest_qdrant.py           # Qdrant collection builder
+│   │
+│   ├── 📂 routers/                    # FastAPI route handlers
+│   │   ├── chat.py                    # POST /chat, /chat/stream, /chat/adk/stream
+│   │   ├── sessions.py                # CRUD /sessions
+│   │   ├── documents.py               # GET /documents/{id}
+│   │   ├── graph.py                   # GET /graph/stats, /graph/stream
+│   │   └── health.py                  # GET /health
+│   │
+│   └── 📂 services/                   # Business logic layer
+│       ├── chat_service.py            # ChatService (pipeline + in-memory history)
+│       ├── session_service.py         # Session CRUD + auto-titling
+│       ├── document_service.py        # Document lookup
+│       └── lookup_service.py          # Full-text document search
+│
+├── 📂 frontend/
+│   └── src/
+│       ├── App.jsx                    # Root component (theme management)
+│       ├── components/
+│       │   ├── ChatInterface.jsx      # 🎨 Main chat UI (400+ lines)
+│       │   └── ChatInterface.css      # Glassmorphism dark-mode styling
+│       └── styles/
+│           ├── index.css              # Design tokens & CSS variables
+│           └── App.css                # Layout & background decorations
+│
+├── 📂 data/                           # Legal document corpus
+│   ├── laws/legal_corpus.json         # Vietnamese law articles (Git LFS)
+│   └── law_graph.json                 # Pre-built Knowledge Graph
+│
+├── requirements.txt                   # Python dependencies
+├── .env                               # Environment configuration
+└── README.md                          # 📖 You are here
+```
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-- Python 3.10+
-- Node.js 18+
-- Docker (for Qdrant)
+| Requirement | Version |
+|---|---|
+| Python | 3.10+ |
+| Node.js | 18+ |
+| Docker | 20+ (for Qdrant) |
+| Google API Key | [Gemini API](https://aistudio.google.com/apikey) |
 
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/your-repo/RagLaw.git
+git clone https://github.com/noskaiser2310/RagLaw.git
 cd RagLaw
 
-# Python environment
-conda create -n raglaw python=3.10 -y
-conda activate raglaw
+# Backend
 pip install -r requirements.txt
 
 # Frontend
 cd frontend && npm install && cd ..
 ```
 
-### 2. Configure
+### 2. Configure Environment
 
 ```bash
 cp .env.example .env
-# Edit .env — set your API keys and adjust settings
 ```
 
-### 3. Start Services
+```env
+GOOGLE_API_KEY=your_gemini_api_key
+QDRANT_HOST=localhost
+QDRANT_PORT=6333
+COLLECTION_NAME=laws
+EMBEDDING_MODEL=AITeamVN/Vietnamese_Embedding_v2
+```
+
+### 3. Start Qdrant (Docker)
+
 
 ```bash
-# Start Qdrant vector database
-docker compose up -d qdrant
+docker run -d --name qdrant \
+  -p 6333:6333 -p 6334:6334 \
+  -v $(pwd)/qdrant_storage:/qdrant/storage \
+  qdrant/qdrant
+```
 
-# Ingest legal documents into Qdrant
+
+### 4. Prepare Data
+
+The legal corpus (`data/laws/legal_corpus.json`, ~114 MB) is tracked via **Git LFS** and will be downloaded automatically on `git clone`. If it wasn't pulled:
+
+```bash
+git lfs pull
+```
+
+**Corpus format:**
+
+```json
+[
+  {
+    "law_id": "Luật 59/2020/QH14",
+    "articles": [
+      {
+        "article_id": "Điều 1",
+        "title": "Phạm vi điều chỉnh",
+        "text": "Luật này quy định về..."
+      }
+    ]
+  }
+]
+```
+
+> **Using your own data:** Place any `.json` files following the above schema into `data/laws/`. The loader supports both array-of-laws and single-law-dict formats.
+
+### 5. Ingest & Build (requires Qdrant running)
+
+```bash
+# Ingest legal documents into Qdrant (embeds + indexes all articles)
 python -m backend.rag.ingest_qdrant
 
-# Start backend
-uvicorn backend.app:app --port 8000
+# Build Knowledge Graph from corpus
+python -m backend.rag.knowledge_graph --build --data-dir data
+```
 
-# Start frontend (in a separate terminal)
+### 6. Run
+
+```bash
+# Terminal 1 — Backend (port 8001)
+uvicorn backend.app:app --reload --port 8001
+
+# Terminal 2 — Frontend (port 5174)
 cd frontend && npm run dev
 ```
 
-Frontend: `http://localhost:5173` · Backend API: `http://localhost:8000/docs`
+Open **http://localhost:5174** → Start chatting! 🎉
+
+### Docker Compose (Full Stack)
+
+One-command deployment:
+
+```bash
+# Start all services (Qdrant + Backend + Frontend)
+docker-compose up -d
+
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f backend
+```
+
+The `docker-compose.yml` includes:
+- **Qdrant** — vector database with health checks (port `6333`)
+- **Backend** — FastAPI server (port `8001`), waits for Qdrant to be healthy
+- **Frontend** — React app (port `5174`)
+
+> **Note:** Before running, make sure `.env` is configured with your `GOOGLE_API_KEY`. Data ingestion and KG building still need to be run manually (see steps 4 & 5 above).
 
 ---
 
-## Configuration
+## 📡 API Reference
 
-All settings are configurable via environment variables. See [`.env.example`](.env.example) for the full reference.
+### Chat
 
-### Key Settings
+| Method | Endpoint | Description | Response |
+|---|---|---|---|
+| `POST` | `/api/chat` | Synchronous chat | `{reply, sources, session_id}` |
+| `POST` | `/api/chat/stream` | SSE streaming (thoughts + tokens) | `text/event-stream` |
+| `POST` | `/api/chat/adk/stream` | Google ADK agent streaming | `text/event-stream` |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `QDRANT_HOST` | `localhost` | Qdrant server host |
-| `QDRANT_PORT` | `6333` | Qdrant REST API port |
-| `QDRANT_RETRIEVAL_MODE` | `hybrid` | `hybrid` · `dense` · `sparse` |
-| `EMBEDDING_MODEL` | `hcmute_wseg` | Embedding model key |
-| `USE_RERANK` | `true` | Enable cross-encoder reranking |
-| `ANTHROPIC_API_KEY` | — | Primary LLM provider key |
-| `GEMINI_API_KEY` | — | Fallback LLM provider key |
-
-### Embedding Models
-
-| Key | Model | Dim | NDCG@10 | Notes |
-|-----|-------|-----|---------|-------|
-| `hcmute_wseg` | `huyydangg/DEk21_hcmute_embedding_wseg` | 768 | **0.908** | Best — requires word segmentation |
-| `vietnamese_v2` | `AITeamVN/Vietnamese_Embedding_v2` | 768 | 0.843 | General Vietnamese |
-| `bge_m3` | `BAAI/bge-m3` | 1024 | 0.784 | Multilingual |
-| `vietnamese` | `AITeamVN/Vietnamese_Embedding` | 768 | 0.843 | Lightweight |
-
----
-
-## API Reference
-
-### Endpoints
-
-| Method | Endpoint | Auth | Description |
-|--------|----------|------|-------------|
-| `GET` | `/api/health` | — | System health check |
-| `GET` | `/api/stats` | — | Pipeline statistics |
-| `POST` | `/api/v1/chat` | Optional | Chat with RAG |
-| `POST` | `/api/v1/chat/mcq` | Optional | MCQ answering |
-| `POST` | `/api/v1/chat/nli` | Optional | NLI answering |
-| `POST` | `/api/v1/auth/register` | — | User registration |
-| `POST` | `/api/v1/auth/login` | — | Login (returns JWT) |
-| `GET` | `/api/v1/sessions` | Required | List chat sessions |
-| `POST` | `/api/v1/documents/upload` | Required | Upload legal documents |
-
-### Chat Request
-
+**Request body:**
 ```json
 {
-  "query": "Điều kiện thành lập doanh nghiệp là gì?",
+  "message": "Điều kiện kết hôn theo luật Việt Nam?",
   "session_id": "optional-uuid",
-  "mode": "flash",
-  "use_rag": true,
-  "top_k": 5
+  "model": "gemini",
+  "mode": "flash"
 }
 ```
 
-### Chat Response
+**SSE Event Types:**
+| Type | Description | Example |
+|---|---|---|
+| `status` | Pipeline status | `"🔍 Đang phân tích..."` |
+| `thought` | Agent step visibility | `{agent: "Router", text: "📊 Vector Search"}` |
+| `sources` | Retrieved documents | `[{content, metadata}]` |
+| `chunk` | Streamed answer token | `"Theo Điều"` |
+| `done` | Stream complete | `""` |
 
-```json
-{
-  "answer": "Theo Điều 17, Luật Doanh nghiệp 2020...",
-  "citations": ["Điều 17, Luật Doanh nghiệp 2020"],
-  "sources": [
-    {
-      "text": "...",
-      "score": 0.912,
-      "law_id": "luat-doanh-nghiep-2020",
-      "article_title": "Điều 17. Quyền của doanh nghiệp"
-    }
-  ],
-  "confidence": 0.85,
-  "model_used": "Gemini"
-}
-```
+### Sessions
 
----
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/sessions` | List all sessions |
+| `GET` | `/api/sessions/{id}` | Get session + messages |
+| `DELETE` | `/api/sessions/{id}` | Delete session |
 
-## Project Structure
+### Other
 
-```
-RagLaw/
-├── backend/
-│   ├── agents/                 # Query analysis & expansion
-│   ├── core/                   # Database, security, models
-│   │   ├── database.py         # SQLAlchemy engine & session
-│   │   ├── security.py         # JWT auth & password hashing
-│   │   └── models/             # User, ChatSession, Message
-│   ├── intelligence/           # AI facade (re-exports)
-│   ├── legal/                  # Vietnamese legal document parser
-│   ├── llm/                    # LLM providers (Gemini, Anthropic, HF)
-│   ├── rag/                    # RAG pipeline
-│   │   ├── base_pipeline.py    # Abstract pipeline interface
-│   │   ├── pipeline.py         # UnifiedRAGPipeline (legacy)
-│   │   ├── qdrant_pipeline.py  # QdrantRAGPipeline (new)
-│   │   ├── qdrant_store.py     # Qdrant vector store wrapper
-│   │   ├── ingest_qdrant.py    # Document ingestion CLI
-│   │   ├── engines/            # BM25, Dense, Hybrid engines
-│   │   ├── multi_retriever.py  # Multi-index retriever
-│   │   └── hyde.py             # Hypothetical Document Embeddings
-│   ├── routers/                # API endpoints
-│   │   ├── auth.py             # /auth — register, login
-│   │   ├── chat.py             # /chat — RAG Q&A
-│   │   ├── sessions.py         # /sessions — history
-│   │   └── documents.py        # /documents — upload & index
-│   ├── schemas/                # Pydantic request/response models
-│   ├── services/               # Business logic
-│   │   ├── auth_service.py     # User registration & auth
-│   │   ├── chat_service.py     # RAG orchestrator
-│   │   ├── session_service.py  # Chat session CRUD
-│   │   └── document_service.py # Document management
-│   ├── app.py                  # FastAPI application
-│   └── config.py               # Configuration (env-driven)
-│
-├── frontend/                   # React + Vite SPA
-│   ├── src/
-│   │   ├── App.jsx
-│   │   ├── components/         # Chat, DocumentBrowser, etc.
-│   │   └── styles/
-│   ├── package.json
-│   └── vite.config.js
-│
-├── data/
-│   ├── laws/                   # Legal document corpus
-│   └── index/                  # Legacy FAISS indexes
-│
-├── docker-compose.yaml         # Qdrant service
-├── .env.example                # Environment template
-├── requirements.txt            # Python dependencies
-└── README.md
-```
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/documents/{id}` | Lookup legal document by ID |
+| `GET` | `/api/graph/stats` | Knowledge Graph statistics |
+| `GET` | `/api/health` | System health check |
+
+📄 **Interactive docs:** `http://localhost:8001/docs` (Swagger UI)
+
 
 ---
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## Acknowledgments
-
-- [Qdrant](https://qdrant.tech/) — Vector search engine
-- [VLSP](https://vlsp.org.vn/) — Vietnamese Language and Speech Processing
-- [sentence-transformers](https://www.sbert.net/) — Embedding models
-- [bm25s](https://github.com/xhluca/bm25s) — Fast BM25 implementation
-- [ViLeXa](https://github.com/your-ref/ViLeXa) — Architecture reference
+<p align="center">
+  <b>Built with ❤️ by Kaiser</b><br>
+  <sub>⚖️ Empowering legal knowledge access through AI</sub>
+</p>

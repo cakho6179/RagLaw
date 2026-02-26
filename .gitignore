@@ -1,12 +1,50 @@
-/.env
-/.env.example
-/.pytest_cache
-/.ruff_cache
-/data
-/raglaw.db
-/restore_stubs.py
-/run_backend.bat
-/run_frontend.bat
-/temp
-/tests
-/frontend/node_modules
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# === Environment ===
+.env
+.env.local
+.env.*.local
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === Node / Frontend ===
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# === Data & DB ===
+data/
+raglaw.db
+*.db-journal
+
+# === Cache ===
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+
+# === Temp & Backup ===
+temp/
+tests/
+
+# === OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Scripts (dev only) ===
+recover.py
+restore_stubs.py
+run_backend.bat
+run_frontend.bat
