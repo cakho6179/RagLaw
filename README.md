@@ -13,7 +13,7 @@
 
 <h1 align="center">⚖️ RagLaw</h1>
 
-<h3 align="center">Agentic RAG System for Vietnamese Legal Document Q&A</h3>
+<h3 align="center">Agentic Legal RAG Chatbot</h3>
 
 <p align="center">
   An end-to-end <b>Retrieval-Augmented Generation</b> system that leverages <b>LangGraph agentic orchestration</b>,<br>
