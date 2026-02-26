@@ -93,10 +93,6 @@ LLM responses include verifiable `[1]`, `[2]` references mapped to expandable so
 flowchart TB
     Client["Frontend (React + Vite)"] --> API
 
-    subgraph API["API Layer — FastAPI"]
-        STREAM["/api/chat/stream (SSE)"]
-        SESS["/api/sessions"]
-    end
 
     subgraph Service["Service Layer"]
         CS["ChatService"] --> SS["SessionService"]
