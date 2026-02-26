@@ -94,7 +94,7 @@ flowchart TB
     Client["Frontend (React + Vite)"] --> API
 
     subgraph API["API Layer — FastAPI"]
-        STREAM["/api/chat/ )"]
+        STREAM["/api/chat/"]
         SESS["/api/sessions"]
     end
 
