@@ -1,7 +1,9 @@
-"""LangGraph Agentic RAG Pipeline for Vietnamese Legal Documents.
+"""LangGraph RAG Pipeline for Vietnamese Legal Documents.
 
 Workflow:
-  route_query → [retrieve → grade_documents → rewrite (×3) OR generate_direct] → generate
+  contextualize (history-aware rewrite) → route (LLM: vector / graph / chat)
+    → retrieve_vector | retrieve_graph → generate
+    → generate_direct (chat route, no retrieval)
 
 Yields SSE-compatible dicts for streaming.
 """
@@ -54,12 +56,11 @@ class AgenticState(TypedDict):
 
 class AgenticRAGPipeline:
     """
-    LangGraph agentic RAG pipeline:
-      1. Route query — decide if retrieval is needed
-      2. Retrieve from Qdrant
-      3. Grade relevance
-      4. Rewrite query up to MAX_REWRITE times
-      5. Generate answer
+    LangGraph RAG pipeline:
+      1. Contextualize the query with chat history (standalone rewrite)
+      2. Route it with an LLM classifier: vector / graph / chat
+      3. Retrieve from Qdrant, or from the NetworkX legal graph plus Qdrant
+      4. Generate the answer (or answer directly for the chat route)
     """
 
     def __init__(

@@ -79,7 +79,7 @@ LLM responses include verifiable `[1]`, `[2]` references mapped to expandable so
 <td>
 
 ### Multi-Model Hot Swap
-**Gemini Flash**, **Gemini Pro**, **Gemma 3 27B**, and **local Ollama** — switch models per-message without restart.
+**Gemini 2.0 Flash**, **Gemini 2.5 Pro**, **Gemini 2.5 Flash** (default), and **local Ollama (llama3)** — switch models per-message without restart.
 
 </td>
 </tr>
@@ -121,7 +121,7 @@ flowchart TB
 
     subgraph LLMs["LLM Models"]
         GF["Gemini Flash / Pro"]
-        GM["Gemma 3 27B"]
+        GM["Gemini 2.5 Flash (default)"]
         OL["Ollama (Local)"]
     end
 
@@ -159,7 +159,7 @@ stateDiagram-v2
 | ① | **Contextualize** | `(query, history)` → `standalone_query` | LLM rewrites follow-up using `MessagesPlaceholder` |
 | ② | **Route** | `standalone_query` → `{vector \| graph \| chat}` | Zero-shot LLM classification (3-class) |
 | ③a | **Retrieve Vector** | `query` → `documents[]` | Qdrant dense cosine similarity (top-k=10) |
-| ③b | **Retrieve Graph** | `query` → `documents[] + graph_context` | NetworkX BFS (2-hop) → Qdrant hybrid → merge + dedup |
+| ③b | **Retrieve Graph** | `query` → `documents[] + graph_context` | NetworkX BFS (2-hop) → Qdrant dense search → merge + dedup |
 | ③c | **Generate Direct** | `(query, history)` → `answer` | LLM direct response (no context) |
 | ④ | **Generate + Cite** | `(query, documents, history)` → `(answer, sources)` | LLM with mandatory `[1][2]` citation injection |
 
@@ -207,11 +207,11 @@ Turn 3:  "Điều này liên quan tới những văn bản nào?"
 | **API Framework** | FastAPI | Async REST API with auto-generated OpenAPI docs |
 | **Orchestration** | LangGraph | Stateful agent graph with conditional routing |
 | **LLM Framework** | LangChain | Prompt templates, output parsers, chat model abstraction |
-| **Vector Database** | Qdrant | Dense/hybrid/sparse semantic retrieval |
+| **Vector Database** | Qdrant | Dense semantic retrieval (default `RETRIEVAL_MODE`) |
 | **Knowledge Graph** | NetworkX | Legal document relationship graph with BFS traversal |
 | **Embeddings** | SentenceTransformers | `AITeamVN/Vietnamese_Embedding_v2` (1024 dims) |
-| **LLM Models** | Google Gemini API | Flash 2.0, Pro 1.5, Gemma 3 27B-IT |
-| **Local LLM** | Ollama | Offline inference (llama3, gemma3:4b) |
+| **LLM Models** | Google Gemini API | Gemini 2.0 Flash, 2.5 Pro, 2.5 Flash (default) |
+| **Local LLM** | Ollama | Offline inference (llama3) |
 | **ORM** | SQLAlchemy | Session & message persistence |
 | **Database** | SQLite | Lightweight, zero-config storage |
 | **Frontend** | React 18 + Vite | SPA with hot module replacement |
@@ -269,7 +269,7 @@ RagLaw/
 │           └── App.css                # Layout & background decorations
 │
 ├── data/                              # Legal document corpus
-│   ├── laws/legal_corpus.json         # Vietnamese law articles (Git LFS)
+│   ├── laws/legal_corpus.json         # Vietnamese law articles (not committed, see Prepare Data)
 │   └── law_graph.json                 # Pre-built Knowledge Graph
 │
 ├── requirements.txt                   # Python dependencies
@@ -330,11 +330,7 @@ docker run -d --name qdrant \
 
 ### 4. Prepare Data
 
-The legal corpus (`data/laws/legal_corpus.json`, ~114 MB) is tracked via **Git LFS** and will be downloaded automatically on `git clone`. If it wasn't pulled:
-
-```bash
-git lfs pull
-```
+The legal corpus (`data/laws/legal_corpus.json`, ~114 MB) is **not included in this repository** (`data/` is git-ignored). Place the corpus at that path, in the format below, before running ingestion.
 
 **Corpus format:**
 

@@ -54,4 +54,6 @@ pydantic-settings>=2.0.0
 qdrant-client>=1.7.0        # Qdrant vector database client
 langchain-qdrant>=0.1.1     # LangChain integration for Qdrant
 langchain-text-splitters>=0.2.0 # For hierarchical chunker
-# langgraph>=0.0.20         # Uncomment for LangGraph agentic RAG pipeline (P2)
+langgraph>=0.0.20          # LangGraph routing pipeline (backend/rag/langchain_pipeline.py)
+networkx>=3.0              # Legal knowledge graph (backend/rag/knowledge_graph.py)
+FlagEmbedding>=1.2.0       # BGE-M3 embeddings (backend/rag/adapters.py)
